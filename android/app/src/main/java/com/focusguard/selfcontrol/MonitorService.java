@@ -451,6 +451,8 @@ public final class MonitorService extends AccessibilityService {
             try {
                 windows.removeViewImmediate(layout);
             } catch (RuntimeException exception) {
+                // The system can detach an overlay during the same transition that ends observation.
+                if (!layout.isAttachedToWindow()) return;
                 connected = false;
                 if (store != null) store.setMonitorConnected(false);
                 disableSelf();

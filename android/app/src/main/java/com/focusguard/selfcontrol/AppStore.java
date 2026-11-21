@@ -152,7 +152,7 @@ final class AppStore extends SQLiteOpenHelper {
     }
 
     synchronized int remainingChallenges() {
-        if (!clockValid() || engine.paused()) return 0;
+        if (!clockValid()) return 0;
         return engine.inspect(context.getPackageName(), SystemClock.elapsedRealtime(), boot).challengesLeft();
     }
 

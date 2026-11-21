@@ -43,11 +43,14 @@ $stagedAssets = Join-Path $run 'assets'
 $main = Join-Path $source 'java/com/focusguard/selfcontrol'
 if ($Test) {
     $testPath = Join-Path $root 'android/tests'
-    & $javac -encoding UTF-8 --release 17 -cp $testClasses -d $testClasses (Join-Path $main 'RuleEngine.java') (Join-Path $main 'ChallengeText.java') (Join-Path $testPath 'RuleEngineTest.java') (Join-Path $testPath 'ChallengeTextTest.java')
+    & $javac -encoding UTF-8 --release 17 -cp $testClasses -d $testClasses `
+        (Join-Path $main 'RuleEngine.java') (Join-Path $main 'ChallengeText.java') (Join-Path $main 'SupervisionStatus.java') `
+        (Join-Path $testPath 'RuleEngineTest.java') (Join-Path $testPath 'ChallengeTextTest.java') (Join-Path $testPath 'SupervisionStatusTest.java')
     Push-Location -LiteralPath $root
     try {
         & $java -cp $testClasses com.focusguard.selfcontrol.RuleEngineTest
         & $java -cp $testClasses com.focusguard.selfcontrol.ChallengeTextTest (Join-Path $source 'assets/quotes.tsv')
+        & $java -cp $testClasses com.focusguard.selfcontrol.SupervisionStatusTest
     } finally {
         Pop-Location
     }

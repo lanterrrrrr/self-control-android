@@ -9,6 +9,8 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.InputType;
@@ -47,6 +49,16 @@ public final class MainActivity extends Activity {
 
     private AppStore store;
     private Page currentPage = Page.HOME;
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private TextView supervisionBadge;
+    private LinearLayout supervisionPanel;
+    private SupervisionStatus displayedStatus;
+    private final Runnable refreshWhileVisible = new Runnable() {
+        @Override public void run() {
+            if (currentPage == Page.HOME) updateSupervision(supervisionStatus());
+            uiHandler.postDelayed(this, 1_500);
+        }
+    };
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -57,6 +69,12 @@ public final class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         render();
+        uiHandler.postDelayed(refreshWhileVisible, 1_500);
+    }
+
+    @Override protected void onPause() {
+        uiHandler.removeCallbacks(refreshWhileVisible);
+        super.onPause();
     }
 
     private void render() {
@@ -64,15 +82,8 @@ public final class MainActivity extends Activity {
             renderSettings();
             return;
         }
-        boolean monitoring = store.monitorEnabled();
-        boolean connected = store.monitorConnected();
-        boolean usage = AppStore.usageAllowed(this);
-        boolean valid = store.clockValid();
-        boolean canMonitor = monitoring && usage && valid && !store.paused();
-        String monitorStatus = store.paused() ? "监管已暂停" : "监管未运行";
-        if (canMonitor) {
-            monitorStatus = connected ? "监管运行中" : "等待服务连接";
-        }
+        SupervisionStatus supervision = supervisionStatus();
+        boolean valid = supervision.clockValid();
         List<RuleEngine.DaySummary> history = store.history();
         List<RuleEngine.Rule> rules = store.rules();
 
@@ -94,10 +105,10 @@ public final class MainActivity extends Activity {
         top.setGravity(Gravity.CENTER_VERTICAL);
         TextView overview = text("今日受管应用用时", 14, PALE, true);
         top.addView(overview, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView status = text(monitorStatus, 12, DEEP, true);
-        status.setBackground(background(PALE, 30));
-        status.setPadding(dp(10), dp(5), dp(10), dp(5));
-        top.addView(status);
+        supervisionBadge = text("", 12, DEEP, true);
+        supervisionBadge.setBackground(background(PALE, 30));
+        supervisionBadge.setPadding(dp(10), dp(5), dp(10), dp(5));
+        top.addView(supervisionBadge);
         hero.addView(top);
         long today = store.day();
         long used = 0;
@@ -107,24 +118,10 @@ public final class MainActivity extends Activity {
         append(hero, text(duration(used), 33, WHITE, true), 9);
         append(hero, text("挑战剩余 " + store.remainingChallenges() + " 次 · 每日时区 " + store.timeZone(), 13, PALE, false), 4);
 
-        if (!monitoring || !usage || !valid) {
-            LinearLayout permissions = card();
-            append(page, permissions, 16);
-            permissions.addView(text(valid ? "开启监管" : "监管暂停", 19, INK, true));
-            if (!monitoring) {
-                append(permissions, text("开启无障碍服务后，应用可识别前台窗口所属的 App 并显示拦截页。", 14, MUTED, false), 5);
-                append(permissions, button("打开无障碍设置", GREEN, WHITE, view -> openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)), 6);
-            }
-            if (!usage) {
-                append(permissions, text("授予使用情况访问，用于核对前台使用记录。", 14, MUTED, false), 8);
-                append(permissions, button("打开使用情况访问", SOFT, INK, view -> openSettings(Settings.ACTION_USAGE_ACCESS_SETTINGS)), 6);
-            }
-            if (!valid) {
-                append(permissions, text(store.ready() ? "请核对系统日期和时间后重试。" : "本地监管记录暂时无法读取。", 14, ALERT, false), 6);
-                if (store.ready()) append(permissions, button("打开日期和时间设置", SOFT, INK,
-                        view -> openSettings(Settings.ACTION_DATE_SETTINGS)), 6);
-            }
-        }
+        supervisionPanel = card();
+        append(page, supervisionPanel, 16);
+        displayedStatus = null;
+        updateSupervision(supervision);
 
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -157,6 +154,57 @@ public final class MainActivity extends Activity {
                     13, MUTED, false), 5);
         }
 
+    }
+
+    private SupervisionStatus supervisionStatus() {
+        boolean validTime = store.clockValid();
+        return new SupervisionStatus(store.paused(), store.monitorEnabled(), store.monitorConnected(),
+                AppStore.usageAllowed(this), store.ready(), validTime);
+    }
+
+    private void updateSupervision(SupervisionStatus status) {
+        if (status.equals(displayedStatus)) return;
+        displayedStatus = status;
+        supervisionPanel.removeAllViews();
+        supervisionPanel.setVisibility(status.state() == SupervisionStatus.State.ACTIVE ? View.GONE : View.VISIBLE);
+        switch (status.state()) {
+            case ACTIVE -> supervisionBadge.setText("监管运行中");
+            case PAUSED -> {
+                supervisionBadge.setText("监管已暂停");
+                String message = "恢复后继续使用当天的记录和额度。";
+                if (!status.accessibilityEnabled()) message += " 系统无障碍开关也处于关闭，恢复后需开启。";
+                else if (!status.usageAllowed()) message += " 恢复后需允许使用情况访问。";
+                supervisionAction(message, "恢复监管", () -> changePause(true));
+            }
+            case ACCESSIBILITY_DISABLED -> {
+                supervisionBadge.setText("无障碍未开启");
+                supervisionAction("在 Android 无障碍设置中开启「自控力」。授权保持开启时，系统会连接监管服务。",
+                        "开启无障碍服务", () -> openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            }
+            case USAGE_PERMISSION_REQUIRED -> {
+                supervisionBadge.setText("缺少使用情况访问");
+                supervisionAction("开启使用情况访问后，应用可以核对前台使用记录。",
+                        "打开使用情况访问", () -> openSettings(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+            }
+            case CONNECTING -> {
+                supervisionBadge.setText("等待服务连接");
+                supervisionAction("无障碍已开启，正在等待 Android 连接服务。", null, null);
+            }
+            case CLOCK_ERROR -> {
+                supervisionBadge.setText("请核对系统时间");
+                supervisionAction("请核对系统日期和时间。",
+                        "打开日期和时间设置", () -> openSettings(Settings.ACTION_DATE_SETTINGS));
+            }
+            case STORAGE_ERROR -> {
+                supervisionBadge.setText("监管暂不可用");
+                supervisionAction("本地监管记录暂时无法读取。", null, null);
+            }
+        }
+    }
+
+    private void supervisionAction(String message, String label, Runnable action) {
+        supervisionPanel.addView(text(message, 14, MUTED, false));
+        if (label != null) append(supervisionPanel, button(label, GREEN, WHITE, view -> action.run()), 8);
     }
 
     private LinearLayout setupPage() {
