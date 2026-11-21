@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">自控力</string>
+    <string name="monitor_description">经你开启后检测前台窗口和应用包名，对选定的应用计时和拦截。可随时在系统设置关闭。应用不读取窗口正文或输入内容。</string>
+    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#20604A</item>
+        <item name="android:windowBackground">#F4F7F3</item>
+        <item name="android:statusBarColor">#F4F7F3</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#F4F7F3</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>
